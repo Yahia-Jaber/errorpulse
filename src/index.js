@@ -1,18 +1,24 @@
 const axios = require('axios');
+
+let _licenseCache = null; // cache result for process lifetime
+
 async function validateLicense(key) {
   if (!key) return false;
+  if (_licenseCache !== null) return _licenseCache; // already checked
 
   try {
     const res = await axios.post('https://api.gumroad.com/v2/licenses/verify', {
       product_id: 'YOUR_PRODUCT_ID',
       license_key: key
     });
-
-    return res.data.success;
+    _licenseCache = res.data.success === true;
+    return _licenseCache;
   } catch {
-    return false;
+    return false; // fail open — never crash
   }
 }
+
+
 function errorPulse(options = {}) {
   const { webhookUrl, licenseKey, projectName = 'My App' } = options;
 
@@ -36,12 +42,39 @@ if (webhookUrl) {
   await axios.post(webhookUrl, payload).catch(() => {});
 }
 
-// PRO feature example (Discord)
+// PRO — Discord (rich embed)
 if (isPro && options.discordWebhookUrl) {
   await axios.post(options.discordWebhookUrl, {
-    content: `🚨 ${projectName}: ${err.message}`
+    embeds: [{
+      title: `🚨 500 Error — ${projectName}`,
+      color: 16711680,
+      fields: [
+        { name: 'Route', value: `${req.method} ${req.path}`, inline: true },
+        { name: 'Error', value: err.message, inline: false },
+        { name: 'Time', value: new Date().toISOString(), inline: true }
+      ]
+    }]
   }).catch(() => {});
 }
+
+// PRO — Microsoft Teams (MessageCard)
+if (isPro && options.teamsWebhookUrl) {
+  await axios.post(options.teamsWebhookUrl, {
+    '@type': 'MessageCard',
+    '@context': 'http://schema.org/extensions',
+    themeColor: 'FF0000',
+    summary: `500 Error in ${projectName}`,
+    sections: [{
+      activityTitle: `🚨 500 Error — ${projectName}`,
+      facts: [
+        { name: 'Route', value: `${req.method} ${req.path}` },
+        { name: 'Error', value: err.message },
+        { name: 'Time', value: new Date().toISOString() }
+      ]
+    }]
+  }).catch(() => {});
+}
+
     }
     next(err);
   };
